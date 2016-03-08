@@ -4,17 +4,26 @@ AC_PREREQ([2.53])
 AC_INIT([gst-plugin-rtmp],[0.0.1])
 
 GST_MAJORMINOR=0.10
-GST_REQUIRED=0.10.0
-GSTPB_REQUIRED=0.10.0
-
-dnl required versions of gstreamer and plugins-base
 GST_REQUIRED=0.10.16
 GSTPB_REQUIRED=0.10.16
 
+dnl AM_MAINTAINER_MODE provides the option to enable maintainer mode
+AM_MAINTAINER_MODE
+dnl add this
+AC_PROG_CXX
+
+AC_SUBST(GST_MAJORMINOR)
+AC_DEFINE_UNQUOTED(GST_MAJORMINOR, "$GST_MAJORMINOR",
+  [GStreamer MAJORMINOR Version])
+
+AC_CONFIG_AUX_DIR([src])
 AC_CONFIG_HEADERS([config.h])
 
 dnl required version of automake
 AM_INIT_AUTOMAKE([1.10])
+
+dnl make aclocal work in maintainer mode
+AC_SUBST(ACLOCAL_AMFLAGS, "-I m4")
 
 dnl enable mainainer mode by default
 AM_MAINTAINER_MODE([enable])
@@ -30,6 +39,14 @@ dnl give error and exit if we don't have pkgconfig
 AC_CHECK_PROG(HAVE_PKGCONFIG, pkg-config, [ ], [
   AC_MSG_ERROR([You need to have pkg-config installed!])
 ])
+
+dnl checks for gstreamer
+dnl uninstalled is selected preferentially -- see pkg-config(1)
+AG_GST_CHECK_GST($GST_MAJORMINOR, [$GST_REQUIRED], yes)
+AG_GST_CHECK_GST_BASE($GST_MAJORMINOR, [$GST_REQUIRED], yes)
+AG_GST_CHECK_GST_CHECK($GST_MAJORMINOR, [$GST_REQUIRED], no)
+AG_GST_CHECK_GST_PLUGINS_BASE($GST_MAJORMINOR, [$GSTPB_REQUIRED], yes)
+AM_CONDITIONAL(HAVE_GST_CHECK, test "x$HAVE_GST_CHECK" = "xyes")
 
 dnl Check for the required version of GStreamer core
 PKG_CHECK_MODULES(GST, [
@@ -148,8 +165,10 @@ AC_SUBST(GST_PLUGIN_LDFLAGS)
 
 AC_CONFIG_FILES(
 Makefile
+m4/Makefile
 gst-libs/Makefile
 gst-libs/ext/Makefile
 src/Makefile
+tests/Makefile
 )
 AC_OUTPUT
