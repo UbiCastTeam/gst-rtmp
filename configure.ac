@@ -41,12 +41,8 @@ AC_CHECK_PROG(HAVE_PKGCONFIG, pkg-config, [ ], [
 ])
 
 dnl checks for gstreamer
-dnl uninstalled is selected preferentially -- see pkg-config(1)
-AG_GST_CHECK_GST($GST_MAJORMINOR, [$GST_REQUIRED], yes)
-AG_GST_CHECK_GST_BASE($GST_MAJORMINOR, [$GST_REQUIRED], yes)
 AG_GST_CHECK_GST_CHECK($GST_MAJORMINOR, [$GST_REQUIRED], no)
 AG_GST_CHECK_GST_PLUGINS_BASE($GST_MAJORMINOR, [$GSTPB_REQUIRED], yes)
-AM_CONDITIONAL(HAVE_GST_CHECK, test "x$HAVE_GST_CHECK" = "xyes")
 
 dnl Check for the required version of GStreamer core
 PKG_CHECK_MODULES(GST, [

@@ -53,7 +53,7 @@
 
 GST_DEBUG_CATEGORY_STATIC (gst_rtmp_sink_debug);
 #define GST_CAT_DEFAULT gst_rtmp_sink_debug
-#define MAX_TCP_TIMEOUT 3000000000LL
+#define MAX_TCP_TIMEOUT 30
 #define STR2AVAL(av, str)        av.av_val = str; av.av_len = strlen(av.av_val)
 
 /* Filter signals and args */
@@ -67,6 +67,7 @@ enum
 {
   PROP_0,
   PROP_LOCATION,
+  PROP_BACKUP_LOCATION,
   PROP_RECONNECTION_DELAY,
   PROP_TCP_TIMEOUT,
   ARG_LOG_LEVEL,
@@ -98,7 +99,7 @@ _do_init (GType gtype)
   static const GInterfaceInfo urihandler_info = {
     gst_rtmp_sink_uri_handler_init,
     NULL,
-    NULL
+    NULL,
   };
 
   g_type_add_interface_static (gtype, GST_TYPE_URI_HANDLER, &urihandler_info);
@@ -148,6 +149,10 @@ gst_rtmp_sink_class_init (GstRTMPSinkClass * klass)
   gst_element_class_install_std_props (GST_ELEMENT_CLASS (klass),
       "location", PROP_LOCATION, G_PARAM_READWRITE, NULL);
 
+  g_object_class_install_property (gobject_class, PROP_BACKUP_LOCATION,
+    g_param_spec_string ("backup_location", "Backup_location", "Backup URI is used when main URI is not accessible anymore", 
+      NULL, G_PARAM_READWRITE));
+
   g_object_class_install_property (gobject_class, ARG_LOG_LEVEL,
     g_param_spec_int ("log-level", "Log level",
         "librtmp log level", RTMP_LOGCRIT, RTMP_LOGALL, RTMP_LOGERROR,
@@ -160,9 +165,9 @@ gst_rtmp_sink_class_init (GstRTMPSinkClass * klass)
       0, G_MAXINT64, 10000000000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (G_OBJECT_CLASS (klass),
-      PROP_TCP_TIMEOUT,  g_param_spec_uint64 ("tcp-timeout",
-      "Custom TCP timeout in ns. If 0, socket is in blocking mode (default librtmp behaviour)",
-      "Custom TCP timeout in ns. If 0, socket is in blocking mode (default librtmp behaviour)",
+      PROP_TCP_TIMEOUT,  g_param_spec_uint ("tcp-timeout",
+      "Custom TCP timeout in sec. If 0, socket is in blocking mode (default librtmp behaviour)",
+      "Custom TCP timeout in sec. If 0, socket is in blocking mode (default librtmp behaviour)",
       0, MAX_TCP_TIMEOUT, MAX_TCP_TIMEOUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_FLASHVER,
@@ -176,6 +181,7 @@ gst_rtmp_sink_finalize (GstRTMPSink * sink)
 #ifdef G_OS_WIN32
   WSACleanup ();
 #endif
+  g_free (sink->backup_uri);
   g_free (sink->uri);
   GST_DEBUG_OBJECT (sink, "free all variables stored in memory");
   G_OBJECT_CLASS (parent_class)->finalize (G_OBJECT (sink));
@@ -200,6 +206,8 @@ gst_rtmp_sink_init (GstRTMPSink * sink, GstRTMPSinkClass * klass)
   sink->try_now_connection = TRUE;
   sink->send_error_count = 0;
   sink->disconnection_notified = 1;
+  sink->is_backup = FALSE;
+  sink->backup_uri = NULL;
   sink->flashver = "gstreamer0.10-rtmp-ubicast";
 }
 
@@ -208,13 +216,26 @@ gst_rtmp_sink_start (GstBaseSink * basesink)
 {
   GstRTMPSink *sink = GST_RTMP_SINK (basesink);
 
-  if (!sink->uri) {
-    GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE,
-        ("Please set URI for RTMP output"), ("No URI set before starting"));
-    return FALSE;
+  printf("in start, is backup : %d\n", sink->is_backup);
+  printf("uri : %s\n", sink->uri);
+  if (!sink->is_backup) {
+    if (!sink->uri) {
+      GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE,
+          ("Please set URI for RTMP output"), ("No URI set before starting"));
+      return FALSE;
+    }
   }
-
-  sink->rtmp_uri = g_strdup (sink->uri);
+  else {
+  	if (!sink->backup_uri) {
+  		GST_ELEMENT_WARNING (sink, RESOURCE, OPEN_WRITE,
+          ("Backup uri is incorrect, can not switch to it"), NULL);
+      return FALSE;
+    }
+  }
+  if (!sink->is_backup)
+  	sink->rtmp_uri = g_strdup (sink->uri);
+  else
+  	sink->rtmp_uri = g_strdup (sink->backup_uri);
   sink->rtmp = RTMP_Alloc ();
 
   if (!sink->rtmp) {
@@ -223,11 +244,21 @@ gst_rtmp_sink_start (GstBaseSink * basesink)
   }
 
   RTMP_Init (sink->rtmp);
-  if (!RTMP_SetupURL (sink->rtmp, sink->rtmp_uri)) {
-    GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE, (NULL),
-        ("Failed to setup URL '%s'", sink->uri));
-    goto error;
+  if (!sink->is_backup) {
+    if (!RTMP_SetupURL (sink->rtmp, sink->rtmp_uri)) {
+      GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE, (NULL),
+          ("Failed to setup URL '%s'", sink->uri));
+      goto error;
+    }
   }
+  else {
+  	if (!RTMP_SetupURL (sink->rtmp, sink->rtmp_uri)) {
+      GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE, (NULL),
+          ("Failed to setup URL '%s'", sink->backup_uri));
+      goto error;
+    }
+  }
+
 
   GST_DEBUG_OBJECT (sink, "Created RTMP object");
 
@@ -284,11 +315,14 @@ static gboolean gst_rtmp_sink_option(GstRTMPSink *sink) {
   AVal timeout;
   AVal flashveropt;
   AVal timeoutopt;
+  gchar *str;
 
   STR2AVAL(flashveropt, "flashver");
   STR2AVAL(timeoutopt, "timeout");
   STR2AVAL(flashver, sink->flashver);
-  STR2AVAL(timeout, "3");
+  str = malloc(5 * sizeof(char*));
+  snprintf(str, 5, "%d", sink->tcp_timeout);
+  STR2AVAL(timeout, str);
 
   if (!RTMP_SetOpt(sink->rtmp, &flashveropt, &flashver)) {
     GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_READ, (NULL),
@@ -314,145 +348,6 @@ error:
   }
   return FALSE;
 }
-
-/*
-static GstFlowReturn
-gst_rtmp_sink_render (GstBaseSink * bsink, GstBuffer * buf)
-{
-  GstRTMPSink *sink = GST_RTMP_SINK (bsink);
-  GstBuffer *reffed_buf = NULL;
-  GstStructure *s;
-
-  if (sink->connection_status) {
-    if (!sink->stream_meta_saved && buf->data[0] == 18) {
-        GST_LOG_OBJECT (sink, "save stream metadata, size : %d", GST_BUFFER_SIZE (buf));
-        sink->stream_meta_saved = copy_metadata(&sink->stream_metadata, buf);
-    }
-    // Check if first packet is video type (video = 9) contain video type
-    else if (!sink->video_meta_saved && buf->data[0] == 9) {
-        GST_LOG_OBJECT (sink, "save video metada, size : %d", GST_BUFFER_SIZE (buf));
-        sink->video_meta_saved = copy_metadata(&sink->video_metadata, buf);
-    }
-    // Check if first packet is audio type (audio = 8) contain video type
-    else if (!sink->audio_meta_saved && buf->data[0] == 8) {
-        GST_LOG_OBJECT (sink, "save audio metada, size : %d", GST_BUFFER_SIZE (buf));
-        sink->audio_meta_saved = copy_metadata(&sink->audio_metadata, buf);
-    }
-  }
-
-  if (sink->reconnection_required) {
-    if ((sink->sent_status == -1 || sink->connection_status == -1))
-      sink->end_time_disc = GST_BUFFER_TIMESTAMP (buf);
-    if ((sink->end_time_disc - sink->begin_time_disc > sink->reconnection_delay) || sink->try_now_connection) {
-      GST_DEBUG_OBJECT (sink, "Maybe disconnected from RTMP server, reconnecting to be sure");
-      if (sink->connection_status == -1 || sink->sent_status == -1) {
-        GST_DEBUG_OBJECT (sink, "Reinitializing RTMP object");
-        gst_rtmp_sink_stop (bsink);
-        gst_rtmp_sink_start (bsink);
-        sink->begin_time_disc = sink->end_time_disc;
-      }
-      if (!RTMP_IsConnected (sink->rtmp)) {
-        GST_DEBUG_OBJECT (sink, "Trying to connect");
-        if (!RTMP_Connect (sink->rtmp, NULL)
-            || !RTMP_ConnectStream (sink->rtmp, 0)) {
-          GST_DEBUG_OBJECT (sink, "Connection failed, freeing RTMP buffers");
-          RTMP_Free (sink->rtmp);
-          sink->rtmp = NULL;
-          g_free (sink->rtmp_uri);
-          sink->try_now_connection = FALSE;
-          sink->rtmp_uri = NULL;
-          sink->connection_status = -1;
-          sink->send_error_count = 0;
-          if (sink->reconnection_delay <= 0)
-            return GST_FLOW_ERROR;
-          else {
-            sink->begin_time_disc = GST_BUFFER_TIMESTAMP (buf);
-            if (sink->disconnection_notified == 1) {
-                GST_DEBUG_OBJECT (sink, "Emitting disconnected message");
-                s = gst_structure_new ("disconnected",
-                    "timestamp", G_TYPE_UINT64, sink->begin_time_disc, NULL);
-                gst_element_post_message (GST_ELEMENT (sink),
-                    gst_message_new_element (GST_OBJECT (sink), s));
-                sink->connection_status = -1;
-                sink->sent_status = 0;
-                sink->disconnection_notified = 0;
-            }
-            return GST_FLOW_OK;
-          }
-        }
-        GST_DEBUG_OBJECT (sink, "Opened connection to %s", sink->rtmp_uri);
-      }
-      */
-      /* FIXME: Parse the first buffer and see if it contains a header plus a packet instead
-      * of just assuming it's only the header */
-      /*
-      GST_LOG_OBJECT (sink, "Caching first buffer of size %d for concatenation",
-          GST_BUFFER_SIZE (buf));
-      gst_buffer_replace (&sink->cache, buf);   
-      sink->reconnection_required = FALSE;
-      if (!sink->disconnection_notified) {
-        GST_DEBUG_OBJECT (sink, "Success to reconnect to server, emitting reconnected message");
-        s = gst_structure_new ("reconnected",
-          "timestamp", G_TYPE_UINT64, sink->begin_time_disc, NULL);
-          gst_element_post_message (GST_ELEMENT (sink),
-        gst_message_new_element (GST_OBJECT (sink), s));
-        sink->disconnection_notified = 1;
-      }
-      else if (sink->sent_status == -1 && sink->send_error_count >= 2) {
-        GST_DEBUG_OBJECT (sink, "Insufficient bandwidth", sink->uri);
-        s = gst_structure_new ("bandwidth",
-            "timestamp", G_TYPE_UINT64, GST_BUFFER_TIMESTAMP (buf), NULL);
-        gst_element_post_message (GST_ELEMENT (sink),
-            gst_message_new_element (GST_OBJECT (sink), s));
-        sink->send_error_count = 0;
-       }
-       sink->connection_status = 1;
-       GST_DEBUG_OBJECT (sink, "Send back stream metadata to the server, dropping video/audio buffer");
-       if (sink->stream_meta_saved)
-         sink->connection_status = RTMP_Write (sink->rtmp,
-           (char *) GST_BUFFER_DATA (sink->stream_metadata), GST_BUFFER_SIZE (sink->stream_metadata));
-       if (sink->video_meta_saved)
-         sink->connection_status = RTMP_Write (sink->rtmp,
-           (char *) GST_BUFFER_DATA (sink->video_metadata), GST_BUFFER_SIZE (sink->video_metadata));
-       if (sink->audio_meta_saved)
-         sink->connection_status = RTMP_Write (sink->rtmp,
-           (char *) GST_BUFFER_DATA (sink->audio_metadata), GST_BUFFER_SIZE (sink->audio_metadata));
-       return GST_FLOW_OK;
-    }
-    else
-      return GST_FLOW_OK;
-  }
-  if (sink->cache) {
-    GST_LOG_OBJECT (sink, "Joining 2nd buffer of size %d to cached buf",
-        GST_BUFFER_SIZE (buf));
-    gst_buffer_ref (buf);
-    reffed_buf = buf = gst_buffer_join (sink->cache, buf);
-    sink->cache = NULL;
-  }
-  if (sink->connection_status > 0) {
-    GST_LOG_OBJECT (sink, "Sending %d bytes to RTMP server",
-        GST_BUFFER_SIZE (buf)); 
-      if (!(sink->sent_status = RTMP_Write (sink->rtmp,
-                  (char *) GST_BUFFER_DATA (buf), GST_BUFFER_SIZE (buf)))) {
-        GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, (NULL),
-            ("Allocation or flv packet too small error"));
-        if (reffed_buf)
-          gst_buffer_unref (reffed_buf);
-        return GST_FLOW_ERROR;
-      }
-  }
-  if (sink->sent_status == -1) {
-    GST_DEBUG_OBJECT (sink, "RTMP send error");
-    sink->send_error_count++;
-    sink->reconnection_required = TRUE;
-    sink->begin_time_disc = GST_BUFFER_TIMESTAMP (buf);
-    sink->try_now_connection = TRUE;
-  }
-  if (reffed_buf)
-    gst_buffer_unref (reffed_buf);
-  return GST_FLOW_OK;
-}
-*/
 
 static GstFlowReturn
 gst_rtmp_sink_render (GstBaseSink * bsink, GstBuffer * buf)
@@ -487,6 +382,21 @@ gst_rtmp_sink_render (GstBaseSink * bsink, GstBuffer * buf)
       if (sink->connection_status == -1 || sink->sent_status == -1) {
         GST_DEBUG_OBJECT (sink, "Reinitializing RTMP object");
         gst_rtmp_sink_stop (bsink);
+        printf("backup URI : %s !!!!!!!!!!!!!\n", sink->backup_uri);
+        if (sink->backup_uri) {
+        	sink->is_backup = !sink->is_backup;
+        	if (!sink->is_backup) {
+	          GST_LOG_OBJECT (sink, "Backup URI is not accessible, will switch on main URI : %s",
+          		sink->backup_uri);
+	         }
+        	else {
+	          GST_LOG_OBJECT (sink, "Main URI is not accessible, will switch on backup URI : %s",
+          		sink->backup_uri);
+	         }
+        }
+        else{
+        	GST_LOG_OBJECT (sink, "No backup URI defined, try to reconnect on main URI");
+        }
         gst_rtmp_sink_start (bsink);
         sink->begin_time_disc = sink->end_time_disc;
       }
@@ -530,7 +440,7 @@ gst_rtmp_sink_render (GstBaseSink * bsink, GstBuffer * buf)
 
       GST_LOG_OBJECT (sink, "Caching first buffer of size %d for concatenation",
           GST_BUFFER_SIZE (buf));
-      gst_buffer_replace (&sink->cache, buf);   
+      gst_buffer_replace (&sink->header, buf);   
       if (!sink->disconnection_notified) {
         GST_DEBUG_OBJECT (sink, "Success to reconnect to server, emitting reconnected message");
         s = gst_structure_new ("reconnected",
@@ -658,12 +568,17 @@ gst_rtmp_sink_uri_set_uri (GstURIHandler * handler, const gchar * uri)
 {
   GstRTMPSink *sink = GST_RTMP_SINK (handler);
   gboolean ret = TRUE;
+  gchar *real_uri;
+
+  printf("set uri, is backup : %d\n", sink->is_backup);
+  real_uri = !sink->is_backup ? sink->uri : sink->backup_uri;
+  printf("is backup : %d\n", sink->is_backup);
 
   if (GST_STATE (sink) >= GST_STATE_PAUSED)
     return FALSE;
 
-  g_free (sink->uri);
-  sink->uri = NULL;
+  g_free (real_uri);
+  real_uri = NULL;
 
   if (uri != NULL) {
     int protocol;
@@ -677,13 +592,17 @@ gst_rtmp_sink_uri_set_uri (GstURIHandler * handler, const gchar * uri)
           ("Failed to parse URI %s", uri), (NULL));
       ret = FALSE;
     } else {
-      sink->uri = g_strdup (uri);
+      real_uri = g_strdup (uri);
     }
     if (playpath.av_val)
       free (playpath.av_val);
   }
   if (ret)
     GST_DEBUG_OBJECT (sink, "Changed URI to %s", GST_STR_NULL (uri));
+  if (!sink->is_backup)
+  	sink->uri = real_uri;
+  else
+  	sink->backup_uri = real_uri;
   return TRUE;
 }
 
@@ -709,11 +628,18 @@ gst_rtmp_sink_set_property (GObject * object, guint prop_id,
       gst_rtmp_sink_uri_set_uri (GST_URI_HANDLER (sink),
           g_value_get_string (value));
       break;
+    case PROP_BACKUP_LOCATION: {
+   	  sink->is_backup = TRUE;
+      gst_rtmp_sink_uri_set_uri (GST_URI_HANDLER (sink),
+        g_value_get_string (value));
+      sink->is_backup = FALSE;
+      break;
+     }
     case PROP_RECONNECTION_DELAY:
       sink->reconnection_delay = g_value_get_uint64 (value);
       break;
     case PROP_TCP_TIMEOUT:
-      sink->tcp_timeout = g_value_get_uint64 (value);
+      sink->tcp_timeout = g_value_get_uint (value);
       break;
     case ARG_LOG_LEVEL:
 	    RTMP_debuglevel = g_value_get_int(value);
@@ -737,11 +663,14 @@ gst_rtmp_sink_get_property (GObject * object, guint prop_id,
     case PROP_LOCATION:
       g_value_set_string (value, sink->uri);
       break;
+    case PROP_BACKUP_LOCATION:
+      g_value_set_string (value, sink->backup_uri);
+      break;
     case PROP_RECONNECTION_DELAY:
       g_value_set_uint64 (value, sink->reconnection_delay);
       break;
     case PROP_TCP_TIMEOUT:
-      g_value_set_uint64 (value, sink->tcp_timeout);
+      g_value_set_uint (value, sink->tcp_timeout);
       break;
     case ARG_LOG_LEVEL:
       g_value_set_int(value, RTMP_debuglevel);

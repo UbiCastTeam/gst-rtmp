@@ -53,19 +53,18 @@ GstPad *srcpad;
 GstPad *sinkpad;
   /* < private > */
   gchar *uri;
+  gchar *backup_uri;
+  gboolean is_backup;
 
   RTMP *rtmp;
   gchar *rtmp_uri; /* copy of url for librtmp */
 
-  GstBuffer *cache; /* Cached buffer */
-  gboolean reconnection_required;
   gint connection_status;
   gint disconnection_notified;
   gint sent_status;
   GstClockTime begin_time_disc;
   GstClockTime end_time_disc;
   GstClockTime reconnection_delay;
-  GstClockTime tcp_timeout;
   gchar *flashver;
 
   gboolean first;
@@ -79,6 +78,7 @@ GstPad *sinkpad;
   gboolean video_meta_saved;
   gboolean audio_meta_saved;
   gint send_error_count;
+  gint tcp_timeout;
   gboolean try_now_connection;
 };
 
