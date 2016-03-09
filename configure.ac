@@ -96,7 +96,7 @@ else
   echo $top_srcdir
   AC_MSG_NOTICE([Using local Libav snapshot])
   dnl libgstrtmp.la: include dirs
-  RTMP_CFLAGS="-I \$(top_srcdir)/gst-libs/ext/librtmp/librtmp \
+  RTMP_CFLAGS="-I \$(top_srcdir)/gst-libs/ext/ \
                  -Wno-deprecated-declarations"
 
   dnl libgstrtmp.la: libs to statically link to        
