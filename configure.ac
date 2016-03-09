@@ -72,16 +72,6 @@ PKG_CHECK_MODULES(SOUP, [
   ])
 ])
 
-PKG_CHECK_MODULES(RTMP, [
-  librtmp
-], [
-  AC_SUBST(RTMP_CFLAGS)
-  AC_SUBST(RTMP_LIBS)
-], [
-  AC_MSG_ERROR([
-      librtmp is required.
-  ])
-])
 
 dnl check if compiler understands -Wall (if yes, add -Wall to GST_CFLAGS)
 AC_MSG_CHECKING([to see if compiler understands -Wall])

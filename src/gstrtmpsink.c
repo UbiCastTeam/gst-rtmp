@@ -199,7 +199,7 @@ gst_rtmp_sink_init (GstRTMPSink * sink, GstRTMPSinkClass * klass)
 #endif
   sink->connection_status = 0;
   sink->reconnection_delay = 10000000000;
-  sink->tcp_timeout = MAX_TCP_TIMEOUT;
+  sink->tcp_timeout = 3;
   sink->stream_meta_saved = FALSE;
   sink->video_meta_saved = FALSE;
   sink->audio_meta_saved = FALSE;
