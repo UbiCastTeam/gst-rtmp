@@ -216,8 +216,6 @@ gst_rtmp_sink_start (GstBaseSink * basesink)
 {
   GstRTMPSink *sink = GST_RTMP_SINK (basesink);
 
-  printf("in start, is backup : %d\n", sink->is_backup);
-  printf("uri : %s\n", sink->uri);
   if (!sink->is_backup) {
     if (!sink->uri) {
       GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE,
@@ -382,7 +380,6 @@ gst_rtmp_sink_render (GstBaseSink * bsink, GstBuffer * buf)
       if (sink->connection_status == -1 || sink->sent_status == -1) {
         GST_DEBUG_OBJECT (sink, "Reinitializing RTMP object");
         gst_rtmp_sink_stop (bsink);
-        printf("backup URI : %s !!!!!!!!!!!!!\n", sink->backup_uri);
         if (sink->backup_uri) {
         	sink->is_backup = !sink->is_backup;
         	if (!sink->is_backup) {
@@ -570,10 +567,7 @@ gst_rtmp_sink_uri_set_uri (GstURIHandler * handler, const gchar * uri)
   gboolean ret = TRUE;
   gchar *real_uri;
 
-  printf("set uri, is backup : %d\n", sink->is_backup);
   real_uri = !sink->is_backup ? sink->uri : sink->backup_uri;
-  printf("is backup : %d\n", sink->is_backup);
-
   if (GST_STATE (sink) >= GST_STATE_PAUSED)
     return FALSE;
 
