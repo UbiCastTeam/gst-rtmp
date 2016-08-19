@@ -109,7 +109,7 @@ else
                  -Wno-deprecated-declarations "
 
   dnl libgstrtmp.la: libs to statically link to        
-  RTMP_LIBS="\$(top_builddir)/gst-libs/ext/librtmp/librtmp.a -L/usr/lib/ssl/ -lssl -lcrypto -ldl"
+  RTMP_LIBS="\$(top_builddir)/gst-libs/ext/librtmp/librtmp.a -L/usr/lib/ssl/ -lssl -lcrypto -ldl -lz"
   RTMP_SUBDIRS=gst-libs
   embrtmp_configure_args="$embrtmp_configure_args SHARED= CRYPTO=OPENSSL"
   AC_CONFIG_COMMANDS([configure-embedded-rtmp],
