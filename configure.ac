@@ -88,8 +88,7 @@ dnl *** rtmp ***
 translit(dnm, m, l) AM_CONDITIONAL(USE_RTMP, true)
 PKG_CHECK_MODULES(RTMP, [rtmp library], rtmp, 
   [
-    PKG_CHECK_MODULES(RTMP, librtmp)
-    HAVE_RTMP="yes"
+    PKG_CHECK_MODULES(RTMP, librtmp, HAVE_RTMP="yes", HAVE_RTMP="no")
   ],
   [ 
     HAVE_RTMP="no"
@@ -106,7 +105,7 @@ else
   echo $top_srcdir
   AC_MSG_NOTICE([Using local librtmp snapshot])
   dnl libgstrtmp.la: include dirs
-  RTMP_CFLAGS="-I\$(top_srcdir)/gst-libs/ext/librtmp/ -I/usr/include/openssl/\
+  RTMP_CFLAGS="-I\$(top_srcdir)/gst-libs/ext/ -I/usr/include/openssl/\
                  -Wno-deprecated-declarations "
 
   dnl libgstrtmp.la: libs to statically link to        
