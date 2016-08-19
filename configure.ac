@@ -84,8 +84,18 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([ ], [ ])], [
   AC_MSG_RESULT([no])
 ])
 
-if test "x$HAVE_RTMP" = "xyes"; then
-  PKG_CHECK_MODULES(RTMP, librtmp) 
+dnl *** rtmp ***
+translit(dnm, m, l) AM_CONDITIONAL(USE_RTMP, true)
+PKG_CHECK_MODULES(RTMP, [rtmp library], rtmp, 
+  [
+    PKG_CHECK_MODULES(RTMP, librtmp)
+    HAVE_RTMP="yes"
+  ],
+  [ 
+    HAVE_RTMP="no"
+  ],
+)
+if test "x$HAVE_RTMP" != "xyes"; then
   saved_CPPFLAGS="$CPPFLAGS"
   CPPFLAGS="$CPPFLAGS $RTMP_CFLAGS"
   CPPFLAGS="$saved_CPPFLAGS"
@@ -94,33 +104,17 @@ if test "x$HAVE_RTMP" = "xyes"; then
   AC_MSG_NOTICE([Using system-installed RTMP code])
 else
   echo $top_srcdir
-  AC_MSG_NOTICE([Using local Libav snapshot])
+  AC_MSG_NOTICE([Using local librtmp snapshot])
   dnl libgstrtmp.la: include dirs
-  RTMP_CFLAGS="-I \$(top_srcdir)/gst-libs/ext/ \
-                 -Wno-deprecated-declarations"
+  RTMP_CFLAGS="-I\$(top_srcdir)/gst-libs/ext/librtmp/ -I/usr/include/openssl/\
+                 -Wno-deprecated-declarations "
 
   dnl libgstrtmp.la: libs to statically link to        
-  RTMP_LIBS="\$(top_builddir)/gst-libs/ext/librtmp/librtmp.a"
-
+  RTMP_LIBS="\$(top_builddir)/gst-libs/ext/librtmp/librtmp.a -L/usr/lib/ssl/ -lssl -lcrypto -ldl"
   RTMP_SUBDIRS=gst-libs
-  AC_DEFINE([RTMP_SOURCE], ["local snapshot"], [Describes where the Librtmp libraries come from.])
-  AC_ARG_WITH(rtmp-extra-configure, 
-      AC_HELP_STRING([--with-rtmp-extra-configure="xxx"],
-      [extra configure options for internal ffmpeg ./configure script]),,
-      with_rtmp_extra_configure=no)
-
-  # basic arguments
-  embrtmp_configure_args=""
-
-  # Enable pic and static so that we get .a files, but with PIC code.
-  embrtmp_configure_args="$embrtmp_configure_args SHARED= CRYPTO="
-
-  AC_SUBST(RTMP_CO_DIR)
-  AC_SUBST(RTMP_SVN)
-  AC_SUBST(RTMP_REVISION)
-  AC_SUBST(RTMP_EXTERNALS_REVISION)
+  embrtmp_configure_args="$embrtmp_configure_args SHARED= CRYPTO=OPENSSL"
   AC_CONFIG_COMMANDS([configure-embedded-rtmp],
-    [echo "Configuring included Librtmp instance with args $embrtmp_configure_args"
+    [echo "Configuring included Librtmp instance with args $librtmp_configure_args"
      origdir=`pwd`
      if test -z "$srcdir" -o "$srcdir" = .; then
        confcmd=make
@@ -134,7 +128,7 @@ else
      cd "$origdir"
     ],
     [embrtmp_configure_args="$embrtmp_configure_args"])
-  AC_MSG_NOTICE([Using included Librtmp code])
+    AC_MSG_NOTICE([Using included Librtmp code])
 fi
 
 dnl set the plugindir where plugins should be installed (for src/Makefile.am)
