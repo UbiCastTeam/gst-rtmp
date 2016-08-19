@@ -95,7 +95,7 @@ PKG_CHECK_MODULES(RTMP, [rtmp library], rtmp,
     HAVE_RTMP="no"
   ],
 )
-if test "x$HAVE_RTMP" != "xyes"; then
+if test "x$HAVE_RTMP" == "xyes"; then
   saved_CPPFLAGS="$CPPFLAGS"
   CPPFLAGS="$CPPFLAGS $RTMP_CFLAGS"
   CPPFLAGS="$saved_CPPFLAGS"
