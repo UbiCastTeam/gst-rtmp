@@ -65,7 +65,6 @@ GstPad *sinkpad;
   GstClockTime begin_time_disc;
   GstClockTime end_time_disc;
   GstClockTime reconnection_delay;
-  gchar *flashver;
 
   gboolean first;
   GstBuffer *header;

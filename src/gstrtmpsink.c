@@ -169,10 +169,6 @@ gst_rtmp_sink_class_init (GstRTMPSinkClass * klass)
       "Custom TCP timeout in sec. If 0, socket is in blocking mode (default librtmp behaviour)",
       "Custom TCP timeout in sec. If 0, socket is in blocking mode (default librtmp behaviour)",
       0, MAX_TCP_TIMEOUT, MAX_TCP_TIMEOUT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_class, PROP_FLASHVER,
-    g_param_spec_string ("flashver", "Flashver", "Version of the Flash plugin used to run the SWF player. The default is gstreamer0.10-rtmp-ubicast", 
-      NULL, G_PARAM_READWRITE));
 }
 
 static void
@@ -208,7 +204,6 @@ gst_rtmp_sink_init (GstRTMPSink * sink, GstRTMPSinkClass * klass)
   sink->disconnection_notified = 1;
   sink->is_backup = FALSE;
   sink->backup_uri = NULL;
-  sink->flashver = "gstreamer0.10-rtmp-ubicast";
 }
 
 static gboolean
@@ -309,28 +304,18 @@ gboolean    copy_metadata(GstBuffer **meta_buf, GstBuffer *buf)
 
 static gboolean gst_rtmp_sink_option(GstRTMPSink *sink) {
 
-  AVal flashver; 
   AVal timeout;
-  AVal flashveropt;
   AVal timeoutopt;
   gchar *str;
 
-  STR2AVAL(flashveropt, "flashver");
   STR2AVAL(timeoutopt, "timeout");
-  STR2AVAL(flashver, sink->flashver);
   str = malloc(5 * sizeof(char*));
   snprintf(str, 5, "%d", sink->tcp_timeout);
   STR2AVAL(timeout, str);
 
-  if (!RTMP_SetOpt(sink->rtmp, &flashveropt, &flashver)) {
-    GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_READ, (NULL),
-           ("Failed to set flashver"));
-    goto error;
-  }
-
   if (!RTMP_SetOpt(sink->rtmp, &timeoutopt, &timeout)) {
     GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_READ, (NULL),
-           ("Failed to set flashver"));
+           ("Failed to set timeout"));
     goto error;
   }
 
@@ -638,9 +623,6 @@ gst_rtmp_sink_set_property (GObject * object, guint prop_id,
     case ARG_LOG_LEVEL:
 	    RTMP_debuglevel = g_value_get_int(value);
 	    break;
-    case PROP_FLASHVER:
-      sink->flashver = g_value_dup_string (value);
-      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -668,9 +650,6 @@ gst_rtmp_sink_get_property (GObject * object, guint prop_id,
       break;
     case ARG_LOG_LEVEL:
       g_value_set_int(value, RTMP_debuglevel);
-      break;
-    case PROP_FLASHVER:
-       g_value_set_string (value, sink->flashver);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
